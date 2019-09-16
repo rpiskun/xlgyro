@@ -23,7 +23,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <string.h>
+#include "lsm9ds1.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -33,7 +34,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define I2C_BUF_SIZE    (256)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,7 +46,23 @@
 I2C_HandleTypeDef hi2c1;
 
 /* USER CODE BEGIN PV */
+static uint8_t i2cBuf[I2C_BUF_SIZE];
 
+static const LSM9DS1_CONFIG_S lsm9ds1Config = {
+  .linearAccelerationRate = E_LINEAR_ACCELERATION_RANGE_16,
+  .angularRate = E_ANGULAR_RATE_RANGE_2000,
+  .magneticRange = E_MAGNETIC_RANGE_16,
+  .operatingMode = E_OPERATING_MODE_XL_GYRO,
+  .xlPowerMode = E_XL_POWER_MODE_952HZ,
+  .gyroPowerMode = E_GYRO_POWER_MODE_952HZ,
+  .fifoMode = E_FIFO_MODE_BYPASS
+};
+
+static XLGYRO_VALUSE_S xlGyroValues = { 0 };
+static volatile uint32_t debug_var = 0;
+static volatile HAL_I2C_StateTypeDef dbgI2cState;
+static volatile HAL_I2C_ModeTypeDef dbgI2cMode;
+static volatile uint32_t dbgI2cError;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -68,9 +85,11 @@ static void MX_I2C1_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+ LSM9DS1_OPERATION_STATUS_E status = E_LSM9DS1_FAIL;
+ memset(i2cBuf, 0, I2C_BUF_SIZE);
+ LSM9DS1_REQUEST_S *pRequest = (LSM9DS1_REQUEST_S*)i2cBuf;
   /* USER CODE END 1 */
-  
+
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -92,6 +111,29 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
+  /* Init LSM9DS1 with given config */
+  status = LSM9DS1_Init(&hi2c1, &lsm9ds1Config);
+  if (E_LSM9DS1_SUCCESS != status)
+  {
+      dbgI2cState = HAL_I2C_GetState(&hi2c1);
+      dbgI2cMode = HAL_I2C_GetMode(&hi2c1);
+      dbgI2cError = HAL_I2C_GetError(&hi2c1);
+    return 1;
+  }
+
+/* Check LSM9DS1 connection */
+  pRequest->subAddress.fields.registerAddr = WHO_AM_I;
+  pRequest->subAddress.fields.autoIncrement = LSM9DS1_ADDRESS_AUTOINCREMENT_DISABLE;
+  status = LSM9DS1_ReadBytes(LSM9DS1_XLGYRO_ADDRESS, pRequest, 1);
+  if (E_LSM9DS1_SUCCESS != status)
+  {
+    return 1;
+  }
+
+  if (pRequest->payload[0] != XL_G_WHO_AM_I_RESPONSE)
+  {
+    return 1;
+  }
 
   /* USER CODE END 2 */
 
@@ -99,6 +141,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    (void)LSM9DS1_ReadXlGyroValues(&xlGyroValues);
+    // HAL_Delay(100);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -115,11 +159,11 @@ void SystemClock_Config(void)
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Configure the main internal regulator output voltage 
+  /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-  /** Initializes the CPU, AHB and APB busses clocks 
+  /** Initializes the CPU, AHB and APB busses clocks
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
@@ -133,7 +177,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  /** Initializes the CPU, AHB and APB busses clocks 
+  /** Initializes the CPU, AHB and APB busses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
@@ -221,7 +265,7 @@ void Error_Handler(void)
   * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
-{ 
+{
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
