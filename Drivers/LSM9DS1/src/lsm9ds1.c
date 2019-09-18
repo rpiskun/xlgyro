@@ -1,19 +1,19 @@
 #include <stddef.h>
 #include <string.h>
-#include <stdbool.h>
 #include "lsm9ds1.h"
 
 #define LSM9DS1_I2C_WRITE_BUFFER_SIZE       (32)
 #define LSM9DS1_I2C_READ_BUFFER_SIZE        (32)
 #define LSM9DS1_CALIBRATION_FIFO_THD        (0x1F)
+#define LSM9DS1_NO_FIFO_THD                 (0)
 
 static I2C_HandleTypeDef *pLsm9ds1I2cHandle = NULL;
 static float accelResolution = 0;
 static float gyroResolution = 0;
 static bool xlGyroCalibrated = false;
 
-static uint16_t xlBiasRaw[E_AXIS_COUNT] = { 0 };
-static uint16_t gBiasRaw[E_AXIS_COUNT] = { 0 };
+static int16_t xlBiasRaw[E_AXIS_COUNT] = { 0 };
+static int16_t gBiasRaw[E_AXIS_COUNT] = { 0 };
 
 static float xlBias[E_AXIS_COUNT] = { 0 };
 static float gBias[E_AXIS_COUNT] = { 0 };
@@ -46,7 +46,6 @@ static LSM9DS1_OPERATION_STATUS_E LSM9DS1_setFifoMode(const FIFO_MODE_E fifoMode
 static LSM9DS1_OPERATION_STATUS_E LSM9DS1_enableFifo(const bool enable);
 static LSM9DS1_OPERATION_STATUS_E LSM9DS1_stopOnFifoThd(const bool stop);
 static LSM9DS1_OPERATION_STATUS_E LSM9DS1_setFifoThd(const uint8_t thd);
-static LSM9DS1_OPERATION_STATUS_E LSM9DS1_getFifoSamples(uint8_t *pSamples);
 
 static LSM9DS1_OPERATION_STATUS_E LSM9DS1_enableFifo(const bool enable)
 {
@@ -138,7 +137,7 @@ static LSM9DS1_OPERATION_STATUS_E LSM9DS1_setFifoThd(const uint8_t thd)
     return ret;
 }
 
-static LSM9DS1_OPERATION_STATUS_E LSM9DS1_getFifoSamples(uint8_t *pSamples)
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_GetFifoSamples(uint8_t *pSamples)
 {
     LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
     uint8_t i2cBuf[LSM9DS1_I2C_WRITE_BUFFER_SIZE];
@@ -582,7 +581,8 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate()
 
             gBiasRawSum[E_X_AXIS] += gRawData.rawData[E_X_AXIS];
             gBiasRawSum[E_Y_AXIS] += gRawData.rawData[E_Y_AXIS];
-            gBiasRawSum[E_Z_AXIS] += gRawData.rawData[E_Z_AXIS] - (int16_t)(1./accelResolution); // Assumes sensor facing up!;
+            // gBiasRawSum[E_Z_AXIS] += gRawData.rawData[E_Z_AXIS] - (int16_t)(1./accelResolution); // Assumes sensor facing up!;
+            gBiasRawSum[E_Z_AXIS] += gRawData.rawData[E_Z_AXIS];
         }
 
         for (uint8_t axis = 0; axis < E_AXIS_COUNT; ++axis)
@@ -595,7 +595,91 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate()
         }
 
         xlGyroCalibrated = true;
+
+        ret = LSM9DS1_stopOnFifoThd(false);
+        if (E_LSM9DS1_SUCCESS != ret)
+        {
+            break;
+        }
+
+        ret = LSM9DS1_setFifoThd(LSM9DS1_NO_FIFO_THD);
     } while(0);
+
+    return ret;
+}
+
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelDataReady(bool *isReady)
+{
+    LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
+    uint8_t i2cBuf[LSM9DS1_I2C_WRITE_BUFFER_SIZE];
+    memset(i2cBuf, 0, LSM9DS1_I2C_WRITE_BUFFER_SIZE);
+    LSM9DS1_REQUEST_S *pRequest = (LSM9DS1_REQUEST_S*)i2cBuf;
+    STATUS_REG_U *pStatusReg;
+
+    do
+    {
+        if (isReady == NULL)
+        {
+            break;
+        }
+
+        pRequest->subAddress.fields.registerAddr = STATUS_REG_XL;
+        pRequest->subAddress.fields.autoIncrement = LSM9DS1_ADDRESS_AUTOINCREMENT_DISABLE;
+        ret = LSM9DS1_ReadBytes(LSM9DS1_XLGYRO_ADDRESS, pRequest, 1);
+        if (E_LSM9DS1_SUCCESS != ret)
+        {
+            break;
+        }
+
+        pStatusReg = (STATUS_REG_U*)&pRequest->payload[0];
+        if (pStatusReg->bitmap.xl_da == 1)
+        {
+            *isReady = true;
+        }
+        else
+        {
+            *isReady = false;
+        }
+
+    } while (0);
+
+    return ret;
+}
+
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroDataReady(bool *isReady)
+{
+    LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
+    uint8_t i2cBuf[LSM9DS1_I2C_WRITE_BUFFER_SIZE];
+    memset(i2cBuf, 0, LSM9DS1_I2C_WRITE_BUFFER_SIZE);
+    LSM9DS1_REQUEST_S *pRequest = (LSM9DS1_REQUEST_S*)i2cBuf;
+    STATUS_REG_U *pStatusReg;
+
+    do
+    {
+        if (isReady == NULL)
+        {
+            break;
+        }
+
+        pRequest->subAddress.fields.registerAddr = STATUS_REG_G;
+        pRequest->subAddress.fields.autoIncrement = LSM9DS1_ADDRESS_AUTOINCREMENT_DISABLE;
+        ret = LSM9DS1_ReadBytes(LSM9DS1_XLGYRO_ADDRESS, pRequest, 1);
+        if (E_LSM9DS1_SUCCESS != ret)
+        {
+            break;
+        }
+
+        pStatusReg = (STATUS_REG_U*)&pRequest->payload[0];
+        if (pStatusReg->bitmap.g_da == 1)
+        {
+            *isReady = true;
+        }
+        else
+        {
+            *isReady = false;
+        }
+
+    } while (0);
 
     return ret;
 }

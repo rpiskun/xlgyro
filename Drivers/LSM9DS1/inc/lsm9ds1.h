@@ -2,6 +2,7 @@
 #define LSM9DS1_H
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "stm32f4xx_hal.h"
 
 /**
@@ -335,12 +336,12 @@ typedef union STATUS_REG_UNION
 
 typedef struct ACCEL_RAW_DATA_STRUCT
 {
-    uint16_t rawData[E_AXIS_COUNT];
+    int16_t rawData[E_AXIS_COUNT];
 } ACCEL_RAW_DATA_S;
 
 typedef struct GYRO_RAW_DATA_STRUCT
 {
-    uint16_t rawData[E_AXIS_COUNT];
+    int16_t rawData[E_AXIS_COUNT];
 } GYRO_RAW_DATA_S;
 
 /**
@@ -356,5 +357,8 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_Init(
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelReadRawData(ACCEL_RAW_DATA_S *pRawData);
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroReadRawData(GYRO_RAW_DATA_S *pRawData);
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate();
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelDataReady(bool *isReady);
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroDataReady(bool *isReady);
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_GetFifoSamples(uint8_t *pSamples);
 
 #endif /* LSM9DS1_H */

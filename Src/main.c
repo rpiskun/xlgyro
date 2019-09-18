@@ -24,6 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <string.h>
+#include <stdbool.h>
 #include "lsm9ds1.h"
 /* USER CODE END Includes */
 
@@ -55,6 +56,12 @@ static const LSM9DS1_CONFIG_S lsm9ds1Config = {
   .gyroPowerMode = E_GYRO_POWER_MODE_952HZ,
   .fifoMode = E_FIFO_MODE_CONTINUOUS
 };
+
+static ACCEL_RAW_DATA_S accelData = { 0 };
+static bool isAccelDataReady = false;
+
+static GYRO_RAW_DATA_S gyroData = { 0 };
+static bool isGyroDataReady = false;
 
 static volatile uint32_t debug_var = 0;
 /* USER CODE END PV */
@@ -122,6 +129,28 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+        status = LSM9DS1_AccelDataReady(&isAccelDataReady);
+        if (E_LSM9DS1_SUCCESS != status)
+        {
+            return 1;
+        }
+
+        if (isAccelDataReady == true)
+        {
+            (void)LSM9DS1_AccelReadRawData(&accelData);
+        }
+
+        status = LSM9DS1_GyroDataReady(&isGyroDataReady);
+        if (E_LSM9DS1_SUCCESS != status)
+        {
+            return 1;
+        }
+
+        if (isGyroDataReady == true)
+        {
+            (void)LSM9DS1_GyroReadRawData(&gyroData);
+        }
+      debug_var++;
     // HAL_Delay(100);
     /* USER CODE END WHILE */
 
