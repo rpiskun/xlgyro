@@ -111,6 +111,7 @@ typedef enum
     E_X_AXIS = 0,
     E_Y_AXIS,
     E_Z_AXIS,
+    E_AXIS_COUNT
 } AXISES;
 
 /**
@@ -301,6 +302,22 @@ typedef union FIFO_SRC_UNION
     uint8_t value;
 } FIFO_SRC_U;
 
+typedef union CTRL_REG9_UNION
+{
+    struct __attribute__((packed, aligned(1)))
+    {
+        uint8_t stop_on_fth     : 1;
+        uint8_t fifo_en         : 1;
+        uint8_t i2c_disable     : 1;
+        uint8_t drdy_mask       : 1;
+        uint8_t fifo_temp_en    : 1;
+        uint8_t reserved1       : 1;
+        uint8_t sleep_g         : 1;
+        uint8_t reserved2       : 1;
+    } bitmap;
+    uint8_t value;
+} CTRL_REG9_U;
+
 typedef union STATUS_REG_UNION
 {
     struct __attribute__((packed, aligned(1)))
@@ -316,15 +333,15 @@ typedef union STATUS_REG_UNION
     uint8_t value;
 } STATUS_REG_U;
 
-typedef struct
+typedef struct ACCEL_RAW_DATA_STRUCT
 {
-    double xlX;
-    double xlY;
-    double xlZ;
-    double gX;
-    double gY;
-    double gZ;
-} XLGYRO_VALUSE_S;
+    uint16_t rawData[E_AXIS_COUNT];
+} ACCEL_RAW_DATA_S;
+
+typedef struct GYRO_RAW_DATA_STRUCT
+{
+    uint16_t rawData[E_AXIS_COUNT];
+} GYRO_RAW_DATA_S;
 
 /**
  * @brief
@@ -336,40 +353,8 @@ typedef struct
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_Init(
     I2C_HandleTypeDef *pI2cHandle,
     const LSM9DS1_CONFIG_S *pConfig);
-
-/**
- * @brief
- *
- * @param deviceAddress
- * @param pRequest
- * @param requestLen
- * @return LSM9DS1_OPERATION_STATUS_E
- */
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_ReadBytes(
-    uint8_t deviceAddress,
-    LSM9DS1_REQUEST_S *pRequest,
-    uint32_t requestLen);
-
-/**
- * @brief
- *
- * @param deviceAddress
- * @param pRequest
- * @param requestLen
- * @return LSM9DS1_OPERATION_STATUS_E
- */
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_WriteBytes(
-    uint8_t deviceAddress,
-    LSM9DS1_REQUEST_S *pRequest,
-    uint32_t requestLen);
-
-/**
- * @brief
- *
- * @param pValue
- * @return LSM9DS1_OPERATION_STATUS_E
- */
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_ReadXlGyroValues(
-    XLGYRO_VALUSE_S *pValue);
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelReadRawData(ACCEL_RAW_DATA_S *pRawData);
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroReadRawData(GYRO_RAW_DATA_S *pRawData);
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate();
 
 #endif /* LSM9DS1_H */
