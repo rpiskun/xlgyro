@@ -48,14 +48,17 @@ I2C_HandleTypeDef hi2c1;
 
 /* USER CODE BEGIN PV */
 static const LSM9DS1_CONFIG_S lsm9ds1Config = {
-  .linearAccelerationRate = E_LINEAR_ACCELERATION_RANGE_16,
-  .angularRate = E_ANGULAR_RATE_RANGE_2000,
-  .magneticRange = E_MAGNETIC_RANGE_16,
-  .operatingMode = E_OPERATING_MODE_XL_GYRO,
-  .xlPowerMode = E_XL_POWER_MODE_952HZ,
-  .gyroPowerMode = E_GYRO_POWER_MODE_952HZ,
-  .fifoMode = E_FIFO_MODE_CONTINUOUS
+    .linearAccelerationRate = E_LINEAR_ACCELERATION_RANGE_16,
+    .angularRate = E_ANGULAR_RATE_RANGE_2000,
+    .magneticRange = E_MAGNETIC_RANGE_16,
+    .operatingMode = E_OPERATING_MODE_XL_GYRO,
+    .xlPowerMode = E_XL_POWER_MODE_952HZ,
+    .gyroPowerMode = E_GYRO_POWER_MODE_952HZ,
+    .fifoMode = E_FIFO_MODE_CONTINUOUS
 };
+
+RAW_DATA_S accelAveraged = { 0 };
+RAW_DATA_S gyroAveraged = { 0 };
 
 static volatile uint32_t debug_var = 0;
 /* USER CODE END PV */
@@ -123,7 +126,20 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-        status = LSM9DS1_PollDataBlocking(&accelData, &gyroData);
+        status = LSM9DS1_PollDataBlocking();
+        if (E_LSM9DS1_SUCCESS != status)
+        {
+            return 1;
+        }
+
+        /* Blocking polling finished. Now we can get averaged data */
+        status = LSM9DS1_AccelRawDataAveraged(&accelAveraged);
+        if (E_LSM9DS1_SUCCESS != status)
+        {
+            return 1;
+        }
+
+        status = LSM9DS1_GyroRawDataAveraged(&gyroAveraged);
         if (E_LSM9DS1_SUCCESS != status)
         {
             return 1;
