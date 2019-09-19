@@ -349,7 +349,7 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate();
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_IsAccelDataReady(bool *isReady);
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_IsGyroDataReady(bool *isReady);
 uint8_t LSM9DS1_GetFifoSamples();
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_PollDataBlocking();
+uint32_t LSM9DS1_PollDataBlocking();
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelRawDataAveraged(RAW_DATA_S *pAccelAveraged);
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroRawDataAveraged(RAW_DATA_S *pAccelAveraged);
 

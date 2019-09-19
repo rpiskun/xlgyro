@@ -84,6 +84,7 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
   LSM9DS1_OPERATION_STATUS_E status = E_LSM9DS1_FAIL;
+  uint32_t samples = 0;
   /* USER CODE END 1 */
 
 
@@ -126,23 +127,22 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-        status = LSM9DS1_PollDataBlocking();
-        if (E_LSM9DS1_SUCCESS != status)
-        {
-            return 1;
-        }
+        samples = LSM9DS1_PollDataBlocking();
 
-        /* Blocking polling finished. Now we can get averaged data */
-        status = LSM9DS1_AccelRawDataAveraged(&accelAveraged);
-        if (E_LSM9DS1_SUCCESS != status)
+        if (samples > 0)
         {
-            return 1;
-        }
+            /* Blocking polling finished. Now we can get averaged data */
+            status = LSM9DS1_AccelRawDataAveraged(&accelAveraged);
+            if (E_LSM9DS1_SUCCESS != status)
+            {
+                return 1;
+            }
 
-        status = LSM9DS1_GyroRawDataAveraged(&gyroAveraged);
-        if (E_LSM9DS1_SUCCESS != status)
-        {
-            return 1;
+            status = LSM9DS1_GyroRawDataAveraged(&gyroAveraged);
+            if (E_LSM9DS1_SUCCESS != status)
+            {
+                return 1;
+            }
         }
 
         debug_var++;
