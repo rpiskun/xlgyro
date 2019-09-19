@@ -48,9 +48,9 @@ I2C_HandleTypeDef hi2c1;
 
 /* USER CODE BEGIN PV */
 static const LSM9DS1_CONFIG_S lsm9ds1Config = {
-    .linearAccelerationRate = E_LINEAR_ACCELERATION_RANGE_16,
-    .angularRate = E_ANGULAR_RATE_RANGE_2000,
-    .magneticRange = E_MAGNETIC_RANGE_16,
+    .linearAccelerationRate = E_LINEAR_ACCELERATION_RANGE_2,
+    .angularRate = E_ANGULAR_RATE_RANGE_245,
+    .magneticRange = E_MAGNETIC_RANGE_4,
     .operatingMode = E_OPERATING_MODE_XL_GYRO,
     .xlPowerMode = E_XL_POWER_MODE_952HZ,
     .gyroPowerMode = E_GYRO_POWER_MODE_952HZ,
