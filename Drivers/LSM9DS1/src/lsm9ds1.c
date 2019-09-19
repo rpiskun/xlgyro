@@ -737,6 +737,7 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_IsGyroDataReady(bool *isReady)
 uint32_t LSM9DS1_PollDataBlocking()
 {
     uint32_t ret = 0;
+    LSM9DS1_OPERATION_STATUS_E status = E_LSM9DS1_FAIL;
     uint8_t samples = 0;
     RAW_DATA_S accelData = { 0 };
     RAW_DATA_S gyroData = { 0 };
@@ -744,21 +745,21 @@ uint32_t LSM9DS1_PollDataBlocking()
     do
     {
         samples = LSM9DS1_GetFifoSamples();
-        ret = samples;
 
         if (samples > 0)
         {
+            ret = samples;
         	do
         	{
-                ret = LSM9DS1_AccelReadRawData(&accelData);
-                if (E_LSM9DS1_SUCCESS != ret)
+                status = LSM9DS1_AccelReadRawData(&accelData);
+                if (E_LSM9DS1_SUCCESS != status)
                 {
                     ret = 0;
                     break;
                 }
 
-                ret = LSM9DS1_GyroReadRawData(&gyroData);
-                if (E_LSM9DS1_SUCCESS != ret)
+                status = LSM9DS1_GyroReadRawData(&gyroData);
+                if (E_LSM9DS1_SUCCESS != status)
                 {
                     ret = 0;
                     break;
