@@ -47,7 +47,15 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
+#define ENTER_CRITICAL_SECTION()        { \
+                                            uint32_t prim = __get_PRIMASK(); \
+                                            __disable_irq(); \
 
+#define EXIT_CRITICAL_SECTION()             if (!prim) \
+                                            { \
+                                                __enable_irq(); \
+                                            } \
+                                        } \
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
