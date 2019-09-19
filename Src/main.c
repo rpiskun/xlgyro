@@ -24,18 +24,29 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <string.h>
-#include <stdbool.h>
 #include "lsm9ds1.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+#define DATA_BUF_SIZE               (1024)
+
+typedef struct DATA_BUF_STRUCT
+{
+    uint32_t readySamplesNum;
+    bool sendingInProgress;
+    struct
+    {
+        RAW_DATA_S aBuf[DATA_BUF_SIZE];
+        RAW_DATA_S gBuf[DATA_BUF_SIZE];
+    } bufs;
+} DATA_BUF_S;
 
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define I2C_BUF_SIZE    (256)
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -62,8 +73,12 @@ static const LSM9DS1_CONFIG_S lsm9ds1Config = {
     .fifoMode = E_FIFO_MODE_CONTINUOUS
 };
 
+DATA_BUF_S dataBuf = { 0 };
+
 RAW_DATA_S accelAveraged = { 0 };
 RAW_DATA_S gyroAveraged = { 0 };
+
+static volatile bool timeElapsed = false;
 
 static volatile uint32_t debug_var = 0;
 /* USER CODE END PV */
@@ -76,12 +91,53 @@ static void MX_I2C1_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+static void dataBufAddAccelValue(RAW_DATA_S *pAccelValue, RAW_DATA_S *pGyroValue);
+static bool dataBufSend();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    /* Prevent unused argument(s) compilation warning */
+    UNUSED(htim);
 
+    /* Function is called from TIM6 IRQ handler */
+    timeElapsed = true;
+}
+
+static void dataBufAddAccelValue(RAW_DATA_S *pAccelValue, RAW_DATA_S *pGyroValue)
+{
+    if (dataBuf.readySamplesNum < DATA_BUF_SIZE && dataBuf.sendingInProgress == false)
+    {
+        memcpy(
+            &dataBuf.bufs.aBuf[dataBuf.readySamplesNum],
+            pAccelValue,
+            sizeof(RAW_DATA_S));
+
+        memcpy(
+            &dataBuf.bufs.gBuf[dataBuf.readySamplesNum],
+            pAccelValue,
+            sizeof(RAW_DATA_S));
+
+        ENTER_CRITICAL_SECTION();
+        dataBuf.readySamplesNum++;
+        EXIT_CRITICAL_SECTION();
+    }
+}
+
+static bool dataBufSend()
+{
+    bool ret = false;
+    if (dataBuf.sendingInProgress != true)
+    {
+        dataBuf.sendingInProgress = true;
+
+        ret = true;
+    }
+
+    return ret;
+}
 /* USER CODE END 0 */
 
 /**
@@ -93,8 +149,9 @@ int main(void)
   /* USER CODE BEGIN 1 */
   LSM9DS1_OPERATION_STATUS_E status = E_LSM9DS1_FAIL;
   uint32_t samples = 0;
+  bool dataSent = false;
   /* USER CODE END 1 */
-  
+
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -156,9 +213,20 @@ int main(void)
             {
                 return 1;
             }
+
+            dataBufAddAccelValue(&accelAveraged, &gyroAveraged);
         }
 
-        debug_var++;
+        if (timeElapsed == true)
+        {
+            dataSent = dataBufSend();
+            if (dataSent == true)
+            {
+                ENTER_CRITICAL_SECTION();
+                timeElapsed = false;
+                EXIT_CRITICAL_SECTION();
+            }
+        }
     // HAL_Delay(100);
     /* USER CODE END WHILE */
 
@@ -176,11 +244,11 @@ void SystemClock_Config(void)
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Configure the main internal regulator output voltage 
+  /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-  /** Initializes the CPU, AHB and APB busses clocks 
+  /** Initializes the CPU, AHB and APB busses clocks
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
@@ -194,7 +262,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  /** Initializes the CPU, AHB and APB busses clocks 
+  /** Initializes the CPU, AHB and APB busses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
@@ -314,10 +382,10 @@ static void MX_USART6_UART_Init(void)
 
 }
 
-/** 
+/**
   * Enable DMA controller clock
   */
-static void MX_DMA_Init(void) 
+static void MX_DMA_Init(void)
 {
 
   /* DMA controller clock enable */
@@ -370,7 +438,7 @@ void Error_Handler(void)
   * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
-{ 
+{
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */

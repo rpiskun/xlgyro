@@ -7,7 +7,7 @@
 #define LSM9DS1_I2C_READ_BUFFER_SIZE            (32)
 #define LSM9DS1_CALIBRATION_FIFO_THD            (0x1F)
 #define LSM9DS1_NO_FIFO_THD                     (0)
-#define LSM9DS1_SLIDING_WINDOW_SIZE             (64)
+#define LSM9DS1_SLIDING_WINDOW_SIZE             (32)
 
 typedef struct RAW_SLIDING_WINDOW_STRUCT
 {
