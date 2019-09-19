@@ -57,12 +57,6 @@ static const LSM9DS1_CONFIG_S lsm9ds1Config = {
   .fifoMode = E_FIFO_MODE_CONTINUOUS
 };
 
-static ACCEL_RAW_DATA_S accelData = { 0 };
-static bool isAccelDataReady = false;
-
-static GYRO_RAW_DATA_S gyroData = { 0 };
-static bool isGyroDataReady = false;
-
 static volatile uint32_t debug_var = 0;
 /* USER CODE END PV */
 
@@ -86,7 +80,7 @@ static void MX_I2C1_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
- LSM9DS1_OPERATION_STATUS_E status = E_LSM9DS1_FAIL;
+  LSM9DS1_OPERATION_STATUS_E status = E_LSM9DS1_FAIL;
   /* USER CODE END 1 */
 
 
@@ -110,18 +104,18 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-  /* Init LSM9DS1 with given config */
-  status = LSM9DS1_Init(&hi2c1, &lsm9ds1Config);
-  if (E_LSM9DS1_SUCCESS != status)
-  {
-    return 1;
-  }
+    /* Init LSM9DS1 with given config */
+    status = LSM9DS1_Init(&hi2c1, &lsm9ds1Config);
+    if (E_LSM9DS1_SUCCESS != status)
+    {
+        return 1;
+    }
 
-  status = LSM9DS1_Calibrate();
-  if (E_LSM9DS1_SUCCESS != status)
-  {
-    return 1;
-  }
+    status = LSM9DS1_Calibrate();
+    if (E_LSM9DS1_SUCCESS != status)
+    {
+        return 1;
+    }
 
   /* USER CODE END 2 */
 
@@ -129,28 +123,13 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-        status = LSM9DS1_AccelDataReady(&isAccelDataReady);
+        status = LSM9DS1_PollDataBlocking(&accelData, &gyroData);
         if (E_LSM9DS1_SUCCESS != status)
         {
             return 1;
         }
 
-        if (isAccelDataReady == true)
-        {
-            (void)LSM9DS1_AccelReadRawData(&accelData);
-        }
-
-        status = LSM9DS1_GyroDataReady(&isGyroDataReady);
-        if (E_LSM9DS1_SUCCESS != status)
-        {
-            return 1;
-        }
-
-        if (isGyroDataReady == true)
-        {
-            (void)LSM9DS1_GyroReadRawData(&gyroData);
-        }
-      debug_var++;
+        debug_var++;
     // HAL_Delay(100);
     /* USER CODE END WHILE */
 

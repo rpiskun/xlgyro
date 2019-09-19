@@ -46,12 +46,6 @@
  */
 #define LSM9DS1_ADDRESS_AUTOINCREMENT_DISABLE   (0)
 
-/**
- * @brief
- * @def LSM9DS1_DEFAULT_TRANSACTION_TIMEOUT
- */
-#define LSM9DS1_DEFAULT_TRANSACTION_TIMEOUT     (100)
-
 #define ACT_THS                         (0x04)
 #define ACT_DUR                         (0x05)
 #define INT_GEN_CFG_XL                  (0x06)
@@ -334,15 +328,10 @@ typedef union STATUS_REG_UNION
     uint8_t value;
 } STATUS_REG_U;
 
-typedef struct ACCEL_RAW_DATA_STRUCT
+typedef struct RAW_DATA_STRUCT
 {
     int16_t rawData[E_AXIS_COUNT];
-} ACCEL_RAW_DATA_S;
-
-typedef struct GYRO_RAW_DATA_STRUCT
-{
-    int16_t rawData[E_AXIS_COUNT];
-} GYRO_RAW_DATA_S;
+} RAW_DATA_S;
 
 /**
  * @brief
@@ -354,11 +343,14 @@ typedef struct GYRO_RAW_DATA_STRUCT
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_Init(
     I2C_HandleTypeDef *pI2cHandle,
     const LSM9DS1_CONFIG_S *pConfig);
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelReadRawData(ACCEL_RAW_DATA_S *pRawData);
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroReadRawData(GYRO_RAW_DATA_S *pRawData);
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelReadRawData(RAW_DATA_S *pRawData);
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroReadRawData(RAW_DATA_S *pRawData);
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate();
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelDataReady(bool *isReady);
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroDataReady(bool *isReady);
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_GetFifoSamples(uint8_t *pSamples);
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_IsAccelDataReady(bool *isReady);
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_IsGyroDataReady(bool *isReady);
+uint8_t LSM9DS1_GetFifoSamples();
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_PollDataBlocking();
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelRawDataAveraged(RAW_DATA_S *pAccelAveraged);
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroRawDataAveraged(RAW_DATA_S *pAccelAveraged);
 
 #endif /* LSM9DS1_H */

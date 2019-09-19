@@ -2,10 +2,19 @@
 #include <string.h>
 #include "lsm9ds1.h"
 
-#define LSM9DS1_I2C_WRITE_BUFFER_SIZE       (32)
-#define LSM9DS1_I2C_READ_BUFFER_SIZE        (32)
-#define LSM9DS1_CALIBRATION_FIFO_THD        (0x1F)
-#define LSM9DS1_NO_FIFO_THD                 (0)
+#define LSM9DS1_DEFAULT_TRANSACTION_TIMEOUT     (20)
+#define LSM9DS1_I2C_WRITE_BUFFER_SIZE           (32)
+#define LSM9DS1_I2C_READ_BUFFER_SIZE            (32)
+#define LSM9DS1_CALIBRATION_FIFO_THD            (0x1F)
+#define LSM9DS1_NO_FIFO_THD                     (0)
+#define LSM9DS1_SLIDING_WINDOW_SIZE             (64)
+
+typedef struct RAW_SLIDING_WINDOW_STRUCT
+{
+    RAW_DATA_S window[LSM9DS1_SLIDING_WINDOW_SIZE];
+    int32_t windowSum[E_AXIS_COUNT];
+    bool inited;
+} RAW_SLIDING_WINDOW_S;
 
 static I2C_HandleTypeDef *pLsm9ds1I2cHandle = NULL;
 static float accelResolution = 0;
@@ -13,10 +22,12 @@ static float gyroResolution = 0;
 static bool xlGyroCalibrated = false;
 
 static int16_t xlBiasRaw[E_AXIS_COUNT] = { 0 };
-static int16_t gBiasRaw[E_AXIS_COUNT] = { 0 };
-
 static float xlBias[E_AXIS_COUNT] = { 0 };
+static RAW_SLIDING_WINDOW_S xlSlidingWindow = { 0 };
+
+static int16_t gBiasRaw[E_AXIS_COUNT] = { 0 };
 static float gBias[E_AXIS_COUNT] = { 0 };
+static RAW_SLIDING_WINDOW_S gSlidingWindow = { 0 };
 
 static const float linearAccelerationSensitivities[] =
 {
@@ -46,6 +57,7 @@ static LSM9DS1_OPERATION_STATUS_E LSM9DS1_setFifoMode(const FIFO_MODE_E fifoMode
 static LSM9DS1_OPERATION_STATUS_E LSM9DS1_enableFifo(const bool enable);
 static LSM9DS1_OPERATION_STATUS_E LSM9DS1_stopOnFifoThd(const bool stop);
 static LSM9DS1_OPERATION_STATUS_E LSM9DS1_setFifoThd(const uint8_t thd);
+static void LSM9DS1_slidingWindowPush(RAW_SLIDING_WINDOW_S *pWindow, RAW_DATA_S *pValue);
 
 static LSM9DS1_OPERATION_STATUS_E LSM9DS1_enableFifo(const bool enable)
 {
@@ -137,9 +149,10 @@ static LSM9DS1_OPERATION_STATUS_E LSM9DS1_setFifoThd(const uint8_t thd)
     return ret;
 }
 
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_GetFifoSamples(uint8_t *pSamples)
+uint8_t LSM9DS1_GetFifoSamples()
 {
-    LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
+    uint8_t ret = 0;
+    LSM9DS1_OPERATION_STATUS_E status = E_LSM9DS1_FAIL;
     uint8_t i2cBuf[LSM9DS1_I2C_WRITE_BUFFER_SIZE];
     memset(i2cBuf, 0, LSM9DS1_I2C_WRITE_BUFFER_SIZE);
     LSM9DS1_REQUEST_S *pRequest = (LSM9DS1_REQUEST_S*)i2cBuf;
@@ -149,14 +162,14 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_GetFifoSamples(uint8_t *pSamples)
     {
         pRequest->subAddress.fields.registerAddr = FIFO_SRC;
         pRequest->subAddress.fields.autoIncrement = LSM9DS1_ADDRESS_AUTOINCREMENT_DISABLE;
-        ret = LSM9DS1_ReadBytes(LSM9DS1_XLGYRO_ADDRESS, pRequest, 1);
-        if (E_LSM9DS1_SUCCESS != ret)
+        status = LSM9DS1_ReadBytes(LSM9DS1_XLGYRO_ADDRESS, pRequest, 1);
+        if (E_LSM9DS1_SUCCESS != status)
         {
             break;
         }
 
         pFifoSrc = (FIFO_SRC_U*)&pRequest->payload[0];
-        *pSamples = pFifoSrc->bitmap.fss;
+        ret = pFifoSrc->bitmap.fss;
     } while (0);
 
     return ret;
@@ -331,6 +344,9 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_Init(
         {
             gyroResolution = angularRateSensitivities[pConfig->angularRate];
         }
+
+        memset(&xlSlidingWindow, 0, sizeof(RAW_SLIDING_WINDOW_S));
+        memset(&gSlidingWindow, 0, sizeof(RAW_SLIDING_WINDOW_S));
     } while (0);
 
     return ret;
@@ -450,7 +466,45 @@ static LSM9DS1_OPERATION_STATUS_E LSM9DS1_WriteBytes(
     return ret;
 }
 
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelReadRawData(ACCEL_RAW_DATA_S *pRawData)
+static void LSM9DS1_slidingWindowPush(RAW_SLIDING_WINDOW_S *pWindow, RAW_DATA_S *pValue)
+{
+    pWindow->windowSum[E_X_AXIS] = 0;
+    pWindow->windowSum[E_Y_AXIS] = 0;
+    pWindow->windowSum[E_Z_AXIS] = 0;
+
+    if (pWindow->inited != true)
+    {
+        /* If sliding window is not inited - fill it with frist given value */
+        for (uint32_t i = 0; i < LSM9DS1_SLIDING_WINDOW_SIZE; ++i)
+        {
+            memcpy(&pWindow->window[i], pValue, sizeof(RAW_DATA_S));
+
+            pWindow->windowSum[E_X_AXIS] += pWindow->window[i].rawData[E_X_AXIS];
+            pWindow->windowSum[E_Y_AXIS] += pWindow->window[i].rawData[E_Y_AXIS];
+            pWindow->windowSum[E_Z_AXIS] += pWindow->window[i].rawData[E_Z_AXIS];
+        }
+
+        pWindow->inited = true;
+    }
+    else
+    {
+        for (uint32_t i = (LSM9DS1_SLIDING_WINDOW_SIZE - 1); i > 0; --i)
+        {
+            pWindow->window[i] = pWindow->window[i - 1];
+            pWindow->windowSum[E_X_AXIS] += pWindow->window[i].rawData[E_X_AXIS];
+            pWindow->windowSum[E_Y_AXIS] += pWindow->window[i].rawData[E_Y_AXIS];
+            pWindow->windowSum[E_Z_AXIS] += pWindow->window[i].rawData[E_Z_AXIS];
+        }
+
+        memcpy(&pWindow->window[0], pValue, sizeof(RAW_DATA_S));
+
+        pWindow->windowSum[E_X_AXIS] += pWindow->window[0].rawData[E_X_AXIS];
+        pWindow->windowSum[E_Y_AXIS] += pWindow->window[0].rawData[E_Y_AXIS];
+        pWindow->windowSum[E_Z_AXIS] += pWindow->window[0].rawData[E_Z_AXIS];
+    }
+}
+
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelReadRawData(RAW_DATA_S *pRawData)
 {
     LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
     uint8_t i2cBuf[LSM9DS1_I2C_WRITE_BUFFER_SIZE];
@@ -487,7 +541,7 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelReadRawData(ACCEL_RAW_DATA_S *pRawData)
     return ret;
 }
 
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroReadRawData(GYRO_RAW_DATA_S *pRawData)
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroReadRawData(RAW_DATA_S *pRawData)
 {
     LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
     uint8_t i2cBuf[LSM9DS1_I2C_WRITE_BUFFER_SIZE];
@@ -530,11 +584,11 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate()
     uint8_t samples = 0;
     int32_t xlBiasRawSum[E_AXIS_COUNT] = { 0, 0, 0 };
     int32_t gBiasRawSum[E_AXIS_COUNT] = { 0, 0, 0 };
-    ACCEL_RAW_DATA_S xlRawData;
-    GYRO_RAW_DATA_S gRawData;
+    RAW_DATA_S xlRawData;
+    RAW_DATA_S gRawData;
 
-    memset(&xlRawData, 0, sizeof(ACCEL_RAW_DATA_S));
-    memset(&gRawData, 0, sizeof(GYRO_RAW_DATA_S));
+    memset(&xlRawData, 0, sizeof(RAW_DATA_S));
+    memset(&gRawData, 0, sizeof(RAW_DATA_S));
 
     do
     {
@@ -552,11 +606,7 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate()
 
         while (samples < LSM9DS1_CALIBRATION_FIFO_THD)
         {
-            ret = LSM9DS1_getFifoSamples(&samples);
-            if (E_LSM9DS1_SUCCESS != ret)
-            {
-                break;
-            }
+            samples = LSM9DS1_GetFifoSamples();
         }
 
         xlGyroCalibrated = false;
@@ -608,7 +658,7 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate()
     return ret;
 }
 
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelDataReady(bool *isReady)
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_IsAccelDataReady(bool *isReady)
 {
     LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
     uint8_t i2cBuf[LSM9DS1_I2C_WRITE_BUFFER_SIZE];
@@ -646,7 +696,7 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelDataReady(bool *isReady)
     return ret;
 }
 
-LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroDataReady(bool *isReady)
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_IsGyroDataReady(bool *isReady)
 {
     LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
     uint8_t i2cBuf[LSM9DS1_I2C_WRITE_BUFFER_SIZE];
@@ -680,6 +730,76 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroDataReady(bool *isReady)
         }
 
     } while (0);
+
+    return ret;
+}
+
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_PollDataBlocking()
+{
+    LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
+    uint8_t samples = 0;
+    RAW_DATA_S accelData = { 0 };
+    RAW_DATA_S gyroData = { 0 };
+
+    do
+    {
+        samples = LSM9DS1_GetFifoSamples();
+
+        if (samples > 0)
+        {
+        	do
+        	{
+                ret = LSM9DS1_AccelReadRawData(&accelData);
+                if (E_LSM9DS1_SUCCESS != ret)
+                {
+                    break;
+                }
+
+                ret = LSM9DS1_GyroReadRawData(&gyroData);
+                if (E_LSM9DS1_SUCCESS != ret)
+                {
+                    break;
+                }
+
+                LSM9DS1_slidingWindowPush(&xlSlidingWindow, &accelData);
+                LSM9DS1_slidingWindowPush(&gSlidingWindow, &gyroData);
+
+                samples--;
+        	} while (samples > 0);
+        }
+    } while (0);
+
+    return ret;
+}
+
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelRawDataAveraged(RAW_DATA_S *pAccelAveraged)
+{
+    LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
+
+    if (pAccelAveraged != NULL)
+    {
+        pAccelAveraged->rawData[E_X_AXIS] = xlSlidingWindow.windowSum[E_X_AXIS] / LSM9DS1_SLIDING_WINDOW_SIZE;
+        pAccelAveraged->rawData[E_Y_AXIS] = xlSlidingWindow.windowSum[E_Y_AXIS] / LSM9DS1_SLIDING_WINDOW_SIZE;
+        pAccelAveraged->rawData[E_Z_AXIS] = xlSlidingWindow.windowSum[E_Z_AXIS] / LSM9DS1_SLIDING_WINDOW_SIZE;
+
+        ret = E_LSM9DS1_SUCCESS;
+    }
+
+    return ret;
+}
+
+LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroRawDataAveraged(RAW_DATA_S *pAccelAveraged)
+{
+    LSM9DS1_OPERATION_STATUS_E ret = E_LSM9DS1_FAIL;
+
+    if (pAccelAveraged != NULL)
+    {
+        pAccelAveraged->rawData[E_X_AXIS] = gSlidingWindow.windowSum[E_X_AXIS] / LSM9DS1_SLIDING_WINDOW_SIZE;
+        pAccelAveraged->rawData[E_Y_AXIS] = gSlidingWindow.windowSum[E_Y_AXIS] / LSM9DS1_SLIDING_WINDOW_SIZE;
+        pAccelAveraged->rawData[E_Z_AXIS] = gSlidingWindow.windowSum[E_Z_AXIS] / LSM9DS1_SLIDING_WINDOW_SIZE;
+
+        ret = E_LSM9DS1_SUCCESS;
+    }
 
     return ret;
 }
