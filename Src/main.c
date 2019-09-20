@@ -24,6 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <string.h>
+#include <stdio.h>
 #include "lsm9ds1.h"
 /* USER CODE END Includes */
 
@@ -65,6 +66,7 @@ typedef struct CIRCULAR_BUF_STRUCT
 I2C_HandleTypeDef hi2c1;
 
 TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim7;
 
 UART_HandleTypeDef huart6;
 DMA_HandleTypeDef hdma_usart6_tx;
@@ -86,6 +88,8 @@ RAW_DATA_S accelAveraged = { 0 };
 RAW_DATA_S gyroAveraged = { 0 };
 
 static volatile bool timeElapsed = false;
+static volatile bool printData = false;
+static char printBuf[1024] = { 0 };
 
 static volatile uint32_t debug_var = 0;
 
@@ -98,9 +102,11 @@ static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_USART6_UART_Init(void);
+static void MX_TIM7_Init(void);
 /* USER CODE BEGIN PFP */
 static bool dataBufSend(CIRCULAR_BUF_S *pBuf);
 static void releaseI2cBus();
+static void printAveragedData();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -143,11 +149,14 @@ static void releaseI2cBus()
  */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    /* Prevent unused argument(s) compilation warning */
-    UNUSED(htim);
-
-    /* Function is called from TIM6 IRQ handler */
-    timeElapsed = true;
+    if (htim == &htim6)
+    {
+        timeElapsed = true;
+    }
+    else if (htim == &htim7)
+    {
+        printData = true;
+    }
 }
 
 void DataBufValuesAppend(RAW_DATA_S *pAccelValue, RAW_DATA_S *pGyroValue)
@@ -207,6 +216,43 @@ static bool dataBufSend(CIRCULAR_BUF_S *pData)
 
     return ret;
 }
+
+static void printAveragedData()
+{
+    uint32_t strLen = 0;
+    RAW_DATA_S aAverData = { 0 };
+    RAW_DATA_S gAverData = { 0 };
+    AXIS_FLOAT_VALUE_S accelValue;
+    AXIS_FLOAT_VALUE_S gyroValue;
+    (void)LSM9DS1_AccelRawDataAveraged(&aAverData);
+    (void)LSM9DS1_GyroRawDataAveraged(&gAverData);
+
+    LSM9DS1_AccelCalc(&aAverData, &accelValue);
+    LSM9DS1_GyroCalc(&gAverData, &gyroValue);
+
+    memset(printBuf, 0, sizeof(printBuf));
+    sprintf(printBuf, "A: [%+.6f]; [%+.6f]; [%+.6f]\r\n",
+                accelValue.axisValue[E_X_AXIS],
+                accelValue.axisValue[E_Y_AXIS],
+                accelValue.axisValue[E_Z_AXIS]);
+    // sprintf(printBuf, "A: [%d]; [%d]; [%d]\r\n",
+    //             aAverData.rawData[E_X_AXIS],
+    //             aAverData.rawData[E_Y_AXIS],
+    //             aAverData.rawData[E_Z_AXIS]);
+
+    strLen = strlen(printBuf);
+    HAL_UART_Transmit(&huart6, (uint8_t*)printBuf, strLen, HAL_MAX_DELAY);
+
+    // memset(printBuf, 0, sizeof(printBuf));
+    // sprintf(printBuf, "G: [%.6f]; [%.6f]; [%.6f]\r\n",
+    //             gyroValue.axisValue[E_X_AXIS],
+    //             gyroValue.axisValue[E_Y_AXIS],
+    //             gyroValue.axisValue[E_Z_AXIS]);
+
+    // strLen = strlen(printBuf);
+    // HAL_UART_Transmit(&huart6, (uint8_t*)printBuf, strLen, HAL_MAX_DELAY);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -247,6 +293,7 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM6_Init();
   MX_USART6_UART_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
     /* Init LSM9DS1 with given config */
     status = LSM9DS1_Init(&hi2c1, &lsm9ds1Config);
@@ -262,6 +309,7 @@ int main(void)
     }
 
     HAL_TIM_Base_Start_IT(&htim6);
+    HAL_TIM_Base_Start_IT(&htim7);
 
   /* USER CODE END 2 */
 
@@ -273,34 +321,42 @@ int main(void)
         samples = LSM9DS1_PollDataBlocking(DataBufValuesAppend);
         HAL_TIM_Base_Stop(&htim6);
 
-        if (samples > 0)
+        // if (samples > 0)
+        // {
+        //     /* Blocking polling finished. Now we can get averaged data */
+        //     status = LSM9DS1_AccelRawDataAveraged(&accelAveraged);
+        //     if (E_LSM9DS1_SUCCESS != status)
+        //     {
+        //         return 1;
+        //     }
+
+        //     status = LSM9DS1_GyroRawDataAveraged(&gyroAveraged);
+        //     if (E_LSM9DS1_SUCCESS != status)
+        //     {
+        //         return 1;
+        //     }
+
+        //     DataBufValuesAppend(&accelAveraged, &gyroAveraged);
+        // }
+
+        // if (timeElapsed == true)
+        // {
+        //     dataSent = dataBufSend(&data);
+        //     if (dataSent == true)
+        //     {
+        //         ENTER_CRITICAL_SECTION();
+        //         timeElapsed = false;
+        //         EXIT_CRITICAL_SECTION();
+        //     }
+        // }
+        if (printData == true)
         {
-            /* Blocking polling finished. Now we can get averaged data */
-            status = LSM9DS1_AccelRawDataAveraged(&accelAveraged);
-            if (E_LSM9DS1_SUCCESS != status)
-            {
-                return 1;
-            }
-
-            status = LSM9DS1_GyroRawDataAveraged(&gyroAveraged);
-            if (E_LSM9DS1_SUCCESS != status)
-            {
-                return 1;
-            }
-
-            DataBufValuesAppend(&accelAveraged, &gyroAveraged);
+            printAveragedData();
+            ENTER_CRITICAL_SECTION();
+            printData = false;
+            EXIT_CRITICAL_SECTION();
         }
 
-        if (timeElapsed == true)
-        {
-            dataSent = dataBufSend(&data);
-            if (dataSent == true)
-            {
-                ENTER_CRITICAL_SECTION();
-                timeElapsed = false;
-                EXIT_CRITICAL_SECTION();
-            }
-        }
     // HAL_Delay(100);
     /* USER CODE END WHILE */
 
@@ -420,6 +476,44 @@ static void MX_TIM6_Init(void)
   /* USER CODE BEGIN TIM6_Init 2 */
 
   /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 42000;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 200;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
 
 }
 

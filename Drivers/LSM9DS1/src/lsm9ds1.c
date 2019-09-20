@@ -631,8 +631,8 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate()
 
             gBiasRawSum[E_X_AXIS] += gRawData.rawData[E_X_AXIS];
             gBiasRawSum[E_Y_AXIS] += gRawData.rawData[E_Y_AXIS];
-            // gBiasRawSum[E_Z_AXIS] += gRawData.rawData[E_Z_AXIS] - (int16_t)(1./accelResolution); // Assumes sensor facing up!;
-            gBiasRawSum[E_Z_AXIS] += gRawData.rawData[E_Z_AXIS];
+            gBiasRawSum[E_Z_AXIS] += gRawData.rawData[E_Z_AXIS] - (int16_t)(1./accelResolution); // Assumes sensor facing up!;
+            // gBiasRawSum[E_Z_AXIS] += gRawData.rawData[E_Z_AXIS];
         }
 
         for (uint8_t axis = 0; axis < E_AXIS_COUNT; ++axis)
@@ -811,4 +811,24 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroRawDataAveraged(RAW_DATA_S *pAccelAverage
     }
 
     return ret;
+}
+
+void LSM9DS1_AccelCalc(RAW_DATA_S *pAccelRawData, AXIS_FLOAT_VALUE_S *pFloatValue)
+{
+    if (pAccelRawData != NULL && pFloatValue != NULL)
+    {
+        pFloatValue->axisValue[E_X_AXIS] = pAccelRawData->rawData[E_X_AXIS] * accelResolution;
+        pFloatValue->axisValue[E_Y_AXIS] = pAccelRawData->rawData[E_Y_AXIS] * accelResolution;
+        pFloatValue->axisValue[E_Z_AXIS] = pAccelRawData->rawData[E_Z_AXIS] * accelResolution;
+    }
+}
+
+void LSM9DS1_GyroCalc(RAW_DATA_S *pGyroRawData, AXIS_FLOAT_VALUE_S *pFloatValue)
+{
+    if (pGyroRawData != NULL && pFloatValue != NULL)
+    {
+        pFloatValue->axisValue[E_X_AXIS] = pGyroRawData->rawData[E_X_AXIS] * gyroResolution;
+        pFloatValue->axisValue[E_Y_AXIS] = pGyroRawData->rawData[E_Y_AXIS] * gyroResolution;
+        pFloatValue->axisValue[E_Z_AXIS] = pGyroRawData->rawData[E_Z_AXIS] * gyroResolution;
+    }
 }
