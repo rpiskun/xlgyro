@@ -333,6 +333,8 @@ typedef struct RAW_DATA_STRUCT
     int16_t rawData[E_AXIS_COUNT];
 } RAW_DATA_S;
 
+typedef void (*RAW_DATA_APPEND_FP)(RAW_DATA_S *pAccelValue, RAW_DATA_S *pgyroValue);
+
 /**
  * @brief
  *
@@ -349,7 +351,7 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_Calibrate();
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_IsAccelDataReady(bool *isReady);
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_IsGyroDataReady(bool *isReady);
 uint8_t LSM9DS1_GetFifoSamples();
-uint32_t LSM9DS1_PollDataBlocking();
+uint32_t LSM9DS1_PollDataBlocking(RAW_DATA_APPEND_FP fpDataAppendCallback);
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_AccelRawDataAveraged(RAW_DATA_S *pAccelAveraged);
 LSM9DS1_OPERATION_STATUS_E LSM9DS1_GyroRawDataAveraged(RAW_DATA_S *pAccelAveraged);
 

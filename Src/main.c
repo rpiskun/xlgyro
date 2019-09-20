@@ -30,17 +30,24 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 #define DATA_BUF_SIZE               (1024)
+#define DATA_BUFS_NUM               (2)
+#define CLOCK_NUM_TO_RELEASE_I2C    (9)
 
 typedef struct DATA_BUF_STRUCT
 {
     uint32_t readySamplesNum;
-    bool sendingInProgress;
     struct
     {
         RAW_DATA_S aBuf[DATA_BUF_SIZE];
         RAW_DATA_S gBuf[DATA_BUF_SIZE];
-    } bufs;
+    } agBufs;
 } DATA_BUF_S;
+
+typedef struct CIRCULAR_BUF_STRUCT
+{
+    uint32_t activeBufIdx;
+    DATA_BUF_S buf[DATA_BUFS_NUM];
+} CIRCULAR_BUF_S;
 
 /* USER CODE END PTD */
 
@@ -73,7 +80,7 @@ static const LSM9DS1_CONFIG_S lsm9ds1Config = {
     .fifoMode = E_FIFO_MODE_CONTINUOUS
 };
 
-DATA_BUF_S dataBuf = { 0 };
+CIRCULAR_BUF_S data = { 0 };
 
 RAW_DATA_S accelAveraged = { 0 };
 RAW_DATA_S gyroAveraged = { 0 };
@@ -81,6 +88,7 @@ RAW_DATA_S gyroAveraged = { 0 };
 static volatile bool timeElapsed = false;
 
 static volatile uint32_t debug_var = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -91,12 +99,48 @@ static void MX_I2C1_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
-static void dataBufAddAccelValue(RAW_DATA_S *pAccelValue, RAW_DATA_S *pGyroValue);
-static bool dataBufSend();
+static bool dataBufSend(CIRCULAR_BUF_S *pBuf);
+static void releaseI2cBus();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/**
+ * @brief Sends 9 clocks to release I2C bus
+ *
+ */
+static void releaseI2cBus()
+{
+    GPIO_InitTypeDef i2cSclGpio = {0};
+    /* Send 9 clocks (SCL) to put slave device
+     * into initial state and release bus */
+    i2cSclGpio.Pin = (GPIO_PIN_6 | GPIO_PIN_9);
+    i2cSclGpio.Mode = GPIO_MODE_OUTPUT_OD;
+    i2cSclGpio.Pull = GPIO_PULLUP;
+    i2cSclGpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    HAL_GPIO_Init(GPIOB, &i2cSclGpio);
+    /* Release SDA */
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_SET);
+
+    for (uint8_t i = 0; i < CLOCK_NUM_TO_RELEASE_I2C; ++i)
+    {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+        HAL_Delay(10);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
+        HAL_Delay(10);
+    }
+    /* Release SCL */
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+}
+
+/**
+ * @brief Sets flags to notify that time is elapsed
+ *
+ * @param[in] htim Pointer to timer handle
+ * @note This function is called from interrupt context
+ *       so it should be short and fast
+ */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     /* Prevent unused argument(s) compilation warning */
@@ -106,33 +150,58 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     timeElapsed = true;
 }
 
-static void dataBufAddAccelValue(RAW_DATA_S *pAccelValue, RAW_DATA_S *pGyroValue)
+void DataBufValuesAppend(RAW_DATA_S *pAccelValue, RAW_DATA_S *pGyroValue)
 {
-    if (dataBuf.readySamplesNum < DATA_BUF_SIZE && dataBuf.sendingInProgress == false)
+    const uint32_t idx = data.activeBufIdx;
+
+    if (pAccelValue != NULL && pGyroValue != NULL)
     {
-        memcpy(
-            &dataBuf.bufs.aBuf[dataBuf.readySamplesNum],
-            pAccelValue,
-            sizeof(RAW_DATA_S));
+        if (data.buf[idx].readySamplesNum < DATA_BUF_SIZE)
+        {
+            memcpy(
+                &data.buf[idx].agBufs.aBuf,
+                pAccelValue,
+                sizeof(RAW_DATA_S));
 
-        memcpy(
-            &dataBuf.bufs.gBuf[dataBuf.readySamplesNum],
-            pAccelValue,
-            sizeof(RAW_DATA_S));
+            memcpy(
+                &data.buf[idx].agBufs.gBuf,
+                pGyroValue,
+                sizeof(RAW_DATA_S));
 
-        ENTER_CRITICAL_SECTION();
-        dataBuf.readySamplesNum++;
-        EXIT_CRITICAL_SECTION();
+            data.buf[idx].readySamplesNum++;
+        }
     }
 }
 
-static bool dataBufSend()
+static bool dataBufSend(CIRCULAR_BUF_S *pData)
 {
     bool ret = false;
-    if (dataBuf.sendingInProgress != true)
-    {
-        dataBuf.sendingInProgress = true;
+    HAL_StatusTypeDef status = HAL_ERROR;
+    const uint32_t idx = pData->activeBufIdx;
 
+    if (pData->buf[idx].readySamplesNum > 0)
+    {
+
+        status = HAL_UART_Transmit_DMA(
+                        &huart6,
+                        (uint8_t*)&pData->buf[idx],
+                        pData->buf[idx].readySamplesNum);
+
+        pData->buf[idx].readySamplesNum = 0;
+
+        pData->activeBufIdx++;
+        if (pData->activeBufIdx >= DATA_BUFS_NUM)
+        {
+            pData->activeBufIdx = 0;
+        }
+
+        if (status == HAL_OK)
+        {
+            ret = true;
+        }
+    }
+    else
+    {
         ret = true;
     }
 
@@ -147,9 +216,11 @@ static bool dataBufSend()
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+
   LSM9DS1_OPERATION_STATUS_E status = E_LSM9DS1_FAIL;
   uint32_t samples = 0;
   bool dataSent = false;
+
   /* USER CODE END 1 */
 
 
@@ -166,7 +237,8 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+    MX_GPIO_Init();
+    releaseI2cBus();
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -197,7 +269,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-        samples = LSM9DS1_PollDataBlocking();
+        HAL_TIM_Base_Start(&htim6);
+        samples = LSM9DS1_PollDataBlocking(DataBufValuesAppend);
+        HAL_TIM_Base_Stop(&htim6);
 
         if (samples > 0)
         {
@@ -214,12 +288,12 @@ int main(void)
                 return 1;
             }
 
-            dataBufAddAccelValue(&accelAveraged, &gyroAveraged);
+            DataBufValuesAppend(&accelAveraged, &gyroAveraged);
         }
 
         if (timeElapsed == true)
         {
-            dataSent = dataBufSend();
+            dataSent = dataBufSend(&data);
             if (dataSent == true)
             {
                 ENTER_CRITICAL_SECTION();

@@ -734,7 +734,7 @@ LSM9DS1_OPERATION_STATUS_E LSM9DS1_IsGyroDataReady(bool *isReady)
     return ret;
 }
 
-uint32_t LSM9DS1_PollDataBlocking()
+uint32_t LSM9DS1_PollDataBlocking(RAW_DATA_APPEND_FP fpDataAppendCallback)
 {
     uint32_t ret = 0;
     LSM9DS1_OPERATION_STATUS_E status = E_LSM9DS1_FAIL;
@@ -767,6 +767,11 @@ uint32_t LSM9DS1_PollDataBlocking()
 
                 LSM9DS1_slidingWindowPush(&xlSlidingWindow, &accelData);
                 LSM9DS1_slidingWindowPush(&gSlidingWindow, &gyroData);
+
+                if (fpDataAppendCallback != NULL)
+                {
+                    fpDataAppendCallback(&accelData, &gyroData);
+                }
 
                 samples--;
         	} while (samples > 0);

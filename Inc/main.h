@@ -47,10 +47,25 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
+
+/**
+ * @brief Stores current primask register and disables interrupts
+ * @def ENTER_CRITICAL_SECTION()
+ * @note Macroses ENTER_CRITICAL_SECTION() and EXIT_CRITICAL_SECTION()
+ *       should be in one scope e.g. in one code block and could not be nested.
+ *       Otherwice it will cause compilation error
+ */
 #define ENTER_CRITICAL_SECTION()        { \
                                             uint32_t prim = __get_PRIMASK(); \
                                             __disable_irq(); \
 
+/**
+ * @brief Enables interrupts if they were enabled before
+ * @def EXIT_CRITICAL_SECTION()
+ * @note Macroses ENTER_CRITICAL_SECTION() and EXIT_CRITICAL_SECTION()
+ *       should be in one scope e.g. in one code block and could not be nested.
+ *       Otherwice it will cause compilation error
+ */
 #define EXIT_CRITICAL_SECTION()             if (!prim) \
                                             { \
                                                 __enable_irq(); \
