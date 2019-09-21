@@ -25,6 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include <string.h>
 #include "lsm9ds1.h"
+#include "crc16.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,21 +33,37 @@
 #define DATA_BUF_SIZE               (1024)
 #define DATA_BUFS_NUM               (2)
 #define CLOCK_NUM_TO_RELEASE_I2C    (9)
+#define PACKET_PREAMBULE            (0xAA55)
 
-typedef struct DATA_BUF_STRUCT
+#define FIELD_SIZEOF(t, f)          (sizeof(((t*)0)->f))
+
+#define DATA_PACKET_LEN_NO_CRC(itms)  ( \
+                                            FIELD_SIZEOF(DATA_PACKET_S, preambule) + \
+                                            FIELD_SIZEOF(DATA_PACKET_S, readySamplesNum) + \
+                                            sizeof(RAW_DATA_S) * itms * 2 )
+
+#define DATA_PACKET_LEN(itms)  ( \
+                                            FIELD_SIZEOF(DATA_PACKET_S, preambule) + \
+                                            FIELD_SIZEOF(DATA_PACKET_S, readySamplesNum) + \
+                                            sizeof(RAW_DATA_S) * itms * 2 + \
+                                            FIELD_SIZEOF(DATA_PACKET_S, crc16))
+
+typedef struct __attribute__((packed, aligned(1))) DATA_PACKET_STRUCT
 {
-    uint32_t readySamplesNum;
+    uint16_t preambule;
+    uint16_t readySamplesNum;
     struct
     {
         RAW_DATA_S aBuf[DATA_BUF_SIZE];
         RAW_DATA_S gBuf[DATA_BUF_SIZE];
     } agBufs;
-} DATA_BUF_S;
+    uint16_t crc16;
+} DATA_PACKET_S;
 
-typedef struct CIRCULAR_BUF_STRUCT
+typedef struct __attribute__((packed, aligned(1))) CIRCULAR_BUF_STRUCT
 {
     uint32_t activeBufIdx;
-    DATA_BUF_S buf[DATA_BUFS_NUM];
+    DATA_PACKET_S payload[DATA_BUFS_NUM];
 } CIRCULAR_BUF_S;
 
 /* USER CODE END PTD */
@@ -156,19 +173,19 @@ void DataBufValuesAppend(RAW_DATA_S *pAccelValue, RAW_DATA_S *pGyroValue)
 
     if (pAccelValue != NULL && pGyroValue != NULL)
     {
-        if (data.buf[idx].readySamplesNum < DATA_BUF_SIZE)
+        if (data.payload[idx].readySamplesNum < DATA_BUF_SIZE)
         {
             memcpy(
-                &data.buf[idx].agBufs.aBuf,
+                &data.payload[idx].agBufs.aBuf,
                 pAccelValue,
                 sizeof(RAW_DATA_S));
 
             memcpy(
-                &data.buf[idx].agBufs.gBuf,
+                &data.payload[idx].agBufs.gBuf,
                 pGyroValue,
                 sizeof(RAW_DATA_S));
 
-            data.buf[idx].readySamplesNum++;
+            data.payload[idx].readySamplesNum++;
         }
     }
 }
@@ -178,16 +195,19 @@ static bool dataBufSend(CIRCULAR_BUF_S *pData)
     bool ret = false;
     HAL_StatusTypeDef status = HAL_ERROR;
     const uint32_t idx = pData->activeBufIdx;
+    const uint16_t samples = pData->payload[idx].readySamplesNum;
 
-    if (pData->buf[idx].readySamplesNum > 0)
+    if (samples > 0)
     {
+        pData->payload[idx].preambule = PACKET_PREAMBULE;
+        pData->payload[idx].crc16 = CalcCrc16((uint8_t*)&pData->payload[idx], DATA_PACKET_LEN_NO_CRC(samples));
 
         status = HAL_UART_Transmit_DMA(
                         &huart6,
-                        (uint8_t*)&pData->buf[idx],
-                        pData->buf[idx].readySamplesNum);
+                        (uint8_t*)&pData->payload[idx],
+                        DATA_PACKET_LEN(samples));
 
-        pData->buf[idx].readySamplesNum = 0;
+        pData->payload[idx].readySamplesNum = 0;
 
         pData->activeBufIdx++;
         if (pData->activeBufIdx >= DATA_BUFS_NUM)
