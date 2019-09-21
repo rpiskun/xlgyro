@@ -170,18 +170,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 void DataBufValuesAppend(RAW_DATA_S *pAccelValue, RAW_DATA_S *pGyroValue)
 {
     const uint32_t idx = data.activeBufIdx;
+    const uint32_t sampleIdx = data.payload[idx].readySamplesNum;
 
     if (pAccelValue != NULL && pGyroValue != NULL)
     {
-        if (data.payload[idx].readySamplesNum < DATA_BUF_SIZE)
+        if (sampleIdx < DATA_BUF_SIZE)
         {
             memcpy(
-                &data.payload[idx].agBufs.aBuf,
+                &data.payload[idx].agBufs.aBuf[sampleIdx],
                 pAccelValue,
                 sizeof(RAW_DATA_S));
 
             memcpy(
-                &data.payload[idx].agBufs.gBuf,
+                &data.payload[idx].agBufs.gBuf[sampleIdx],
                 pGyroValue,
                 sizeof(RAW_DATA_S));
 
