@@ -31,6 +31,7 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 #define DATA_BUF_SIZE               (1024)
+#define TX_BUF_SIZE                 (1024 * 6)
 #define DATA_BUFS_NUM               (2)
 #define CLOCK_NUM_TO_RELEASE_I2C    (9)
 #define PACKET_PREAMBULE            (0xAA55)
@@ -38,26 +39,28 @@
 #define FIELD_SIZEOF(t, f)          (sizeof(((t*)0)->f))
 
 #define DATA_PACKET_LEN_NO_CRC(itms)  ( \
-                                            FIELD_SIZEOF(DATA_PACKET_S, preambule) + \
+                                            FIELD_SIZEOF(DATA_PACKET_S, preambule1) + \
+                                            FIELD_SIZEOF(DATA_PACKET_S, preambule2) + \
                                             FIELD_SIZEOF(DATA_PACKET_S, readySamplesNum) + \
                                             sizeof(RAW_DATA_S) * itms * 2 )
 
 #define DATA_PACKET_LEN(itms)  ( \
-                                            FIELD_SIZEOF(DATA_PACKET_S, preambule) + \
+                                            FIELD_SIZEOF(DATA_PACKET_S, preambule1) + \
+                                            FIELD_SIZEOF(DATA_PACKET_S, preambule2) + \
                                             FIELD_SIZEOF(DATA_PACKET_S, readySamplesNum) + \
                                             sizeof(RAW_DATA_S) * itms * 2 + \
                                             FIELD_SIZEOF(DATA_PACKET_S, crc16))
 
 typedef struct __attribute__((packed, aligned(1))) DATA_PACKET_STRUCT
 {
-    uint16_t preambule;
+    uint16_t preambule1;
+    uint16_t preambule2;
     uint16_t readySamplesNum;
     struct
     {
-        RAW_DATA_S aBuf[DATA_BUF_SIZE];
-        RAW_DATA_S gBuf[DATA_BUF_SIZE];
-    } agBufs;
-    uint16_t crc16;
+        RAW_DATA_S aValue;
+        RAW_DATA_S gValue;
+    } bufs[DATA_BUF_SIZE];
 } DATA_PACKET_S;
 
 typedef struct __attribute__((packed, aligned(1))) CIRCULAR_BUF_STRUCT
@@ -98,13 +101,15 @@ static const LSM9DS1_CONFIG_S lsm9ds1Config = {
 };
 
 CIRCULAR_BUF_S data = { 0 };
+uint8_t txBuf[TX_BUF_SIZE] = { 0 };
 
 RAW_DATA_S accelAveraged = { 0 };
 RAW_DATA_S gyroAveraged = { 0 };
 
-static volatile bool timeElapsed = false;
+static volatile bool sendData = false;
 
 static volatile uint32_t debug_var = 0;
+static volatile bool inProgress = false;
 
 /* USER CODE END PV */
 
@@ -164,7 +169,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     UNUSED(htim);
 
     /* Function is called from TIM6 IRQ handler */
-    timeElapsed = true;
+    sendData = true;
+}
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    inProgress = false;
 }
 
 void DataBufValuesAppend(RAW_DATA_S *pAccelValue, RAW_DATA_S *pGyroValue)
@@ -177,16 +187,33 @@ void DataBufValuesAppend(RAW_DATA_S *pAccelValue, RAW_DATA_S *pGyroValue)
         if (sampleIdx < DATA_BUF_SIZE)
         {
             memcpy(
-                &data.payload[idx].agBufs.aBuf[sampleIdx],
+                &data.payload[idx].bufs[sampleIdx].aValue,
                 pAccelValue,
                 sizeof(RAW_DATA_S));
 
+            // memset(
+            //     &data.payload[idx].bufs[sampleIdx].aValue,
+            //     0xAB,
+            //     sizeof(RAW_DATA_S));
+
             memcpy(
-                &data.payload[idx].agBufs.gBuf[sampleIdx],
+                &data.payload[idx].bufs[sampleIdx].gValue,
                 pGyroValue,
                 sizeof(RAW_DATA_S));
 
+            // memset(
+            //     &data.payload[idx].bufs[sampleIdx].gValue,
+            //     0xCD,
+            //     sizeof(RAW_DATA_S));
+
             data.payload[idx].readySamplesNum++;
+        }
+        else
+        {
+            /* Buffer is full - initiate data transfer */
+            ENTER_CRITICAL_SECTION();
+            sendData = true;
+            EXIT_CRITICAL_SECTION();
         }
     }
 }
@@ -197,27 +224,45 @@ static bool dataBufSend(CIRCULAR_BUF_S *pData)
     HAL_StatusTypeDef status = HAL_ERROR;
     const uint32_t idx = pData->activeBufIdx;
     const uint16_t samples = pData->payload[idx].readySamplesNum;
+    uint32_t payloadLen = 0;
+    uint16_t crc16 = 0;
 
-    if (samples > 0)
+    if (inProgress == false && samples > 0)
     {
-        pData->payload[idx].preambule = PACKET_PREAMBULE;
-        pData->payload[idx].crc16 = CalcCrc16((uint8_t*)&pData->payload[idx], DATA_PACKET_LEN_NO_CRC(samples));
-
-        status = HAL_UART_Transmit_DMA(
-                        &huart6,
-                        (uint8_t*)&pData->payload[idx],
-                        DATA_PACKET_LEN(samples));
-
-        pData->payload[idx].readySamplesNum = 0;
-
+        ENTER_CRITICAL_SECTION();
         pData->activeBufIdx++;
         if (pData->activeBufIdx >= DATA_BUFS_NUM)
         {
             pData->activeBufIdx = 0;
         }
+        EXIT_CRITICAL_SECTION();
+
+        pData->payload[idx].preambule1 = PACKET_PREAMBULE;
+        pData->payload[idx].preambule2 = PACKET_PREAMBULE;
+        payloadLen = DATA_PACKET_LEN_NO_CRC(samples);
+        if ((payloadLen + 4) <= TX_BUF_SIZE)    // +2 for CRC
+        {
+            memcpy(txBuf, (uint8_t*)&pData->payload[idx], payloadLen);
+        }
+    //    crc16 = CalcCrc16(txBuf, payloadLen);
+    //    txBuf[payloadLen] = (uint8_t)(crc16 >> 8);
+    //    txBuf[payloadLen + 1] = (uint8_t)(crc16);
+        txBuf[payloadLen] = 0xA5;
+        txBuf[payloadLen + 1] = 0xA5;
+        txBuf[payloadLen + 2] = 0xA5;
+        txBuf[payloadLen + 3] = 0xA5;
+
+        status = HAL_UART_Transmit_DMA(
+                        &huart6,
+                        txBuf,
+                        (payloadLen + 4));
 
         if (status == HAL_OK)
         {
+        	pData->payload[idx].readySamplesNum = 0;
+            ENTER_CRITICAL_SECTION();
+            inProgress = true;
+            EXIT_CRITICAL_SECTION();
             ret = true;
         }
     }
@@ -239,7 +284,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
 
   LSM9DS1_OPERATION_STATUS_E status = E_LSM9DS1_FAIL;
-  uint32_t samples = 0;
+//  uint32_t samples = 0;
   bool dataSent = false;
 
   /* USER CODE END 1 */
@@ -290,35 +335,15 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-        HAL_TIM_Base_Start(&htim6);
-        samples = LSM9DS1_PollDataBlocking(DataBufValuesAppend);
-        HAL_TIM_Base_Stop(&htim6);
+        (void)LSM9DS1_PollDataBlocking(DataBufValuesAppend);
 
-        if (samples > 0)
-        {
-            /* Blocking polling finished. Now we can get averaged data */
-            status = LSM9DS1_AccelRawDataAveraged(&accelAveraged);
-            if (E_LSM9DS1_SUCCESS != status)
-            {
-                return 1;
-            }
-
-            status = LSM9DS1_GyroRawDataAveraged(&gyroAveraged);
-            if (E_LSM9DS1_SUCCESS != status)
-            {
-                return 1;
-            }
-
-            DataBufValuesAppend(&accelAveraged, &gyroAveraged);
-        }
-
-        if (timeElapsed == true)
+        if (sendData == true)
         {
             dataSent = dataBufSend(&data);
             if (dataSent == true)
             {
                 ENTER_CRITICAL_SECTION();
-                timeElapsed = false;
+                sendData = false;
                 EXIT_CRITICAL_SECTION();
             }
         }
@@ -426,7 +451,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 42000;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 1000;
+  htim6.Init.Period = 200;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
