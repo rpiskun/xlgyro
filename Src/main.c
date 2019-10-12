@@ -90,7 +90,8 @@ UART_HandleTypeDef huart6;
 DMA_HandleTypeDef hdma_usart6_tx;
 
 /* USER CODE BEGIN PV */
-static const LSM9DS1_CONFIG_S lsm9ds1Config = {
+static const LSM9DS1_CONFIG_S lsm9ds1Config = 
+{
     .linearAccelerationRate = E_LINEAR_ACCELERATION_RANGE_2,
     .angularRate = E_ANGULAR_RATE_RANGE_245,
     .magneticRange = E_MAGNETIC_RANGE_4,

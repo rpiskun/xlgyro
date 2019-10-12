@@ -4,3 +4,7 @@ GPATH
 GRTAGS
 GTAGS
 gtags_files
+**/cscope*
+tags
+*.swp
+
