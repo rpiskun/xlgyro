@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0)
 set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")
 set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
-project(xlgyro NONE)
+project(xlgyro.elf NONE)
 
 set(LOCAL_SRCS "")
 set(LOCAL_HDRS "")
@@ -20,10 +20,11 @@ file(GLOB LOCAL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 
 file(GLOB LOCAL_HDRS "${CMAKE_CURRENT_SOURCE_DIR}/../Inc/*.h")
 
-include_directories(${CMAKE_SOURCE_DIR} "Drivers/CMSIS/Device/ST/STM32F4xx/Include")
-include_directories(${CMAKE_SOURCE_DIR} "Drivers/CMSIS/Include")
-include_directories(${CMAKE_SOURCE_DIR} "Drivers/STM32F4xx_HAL_Driver/Inc")
-include_directories(${CMAKE_SOURCE_DIR} "Drivers/LSM9DS1/inc")
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../Drivers/CMSIS/Device/ST/STM32F4xx/Include")
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../Drivers/CMSIS/Include")
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../Drivers/STM32F4xx_HAL_Driver/Inc")
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../Drivers/LSM9DS1/inc")
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../Inc")
 
-add_executable(xlgyro ${LOCAL_SRCS} ${LOCAL_HDRS})
-target_link_libraries(xlgyro lsm9ds1 stm32f407hal)
+add_executable(xlgyro.elf ${LOCAL_SRCS} ${LOCAL_HDRS})
+target_link_libraries(xlgyro.elf lsm9ds1 stm32f407hal)

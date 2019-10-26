@@ -21,9 +21,11 @@ file(GLOB LOCAL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 
 file(GLOB LOCAL_HDRS "${CMAKE_CURRENT_SOURCE_DIR}/../inc/*.h")
 
-include_directories(${CMAKE_SOURCE_DIR} "Drivers/CMSIS/Device/ST/STM32F4xx/Include")
-include_directories(${CMAKE_SOURCE_DIR} "Drivers/CMSIS/Include")
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../../CMSIS/Device/ST/STM32F4xx/Include")
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../../CMSIS/Include")
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../../STM32F4xx_HAL_Driver/Inc")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../inc")
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../../../Inc")
 
 add_library(lsm9ds1 ${LOCAL_SRCS} ${LOCAL_HDRS})
 
