@@ -8,7 +8,7 @@ fi
 
 echo "Finding files ..."
 find "$PWD" \
-    -o -name '*.[ch]' \
+    -name '*.[ch]' \
     -o -name '*.S' > "$CSCOPE_DIR/cscope.files"
 
 echo "Adding files to cscope db: $PWD/cscope.db ..."
