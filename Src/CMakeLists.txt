@@ -25,14 +25,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../Drivers/STM32F4xx_HAL_Driver
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../Drivers/LSM9DS1/inc")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} "../Inc")
 
-add_link_options("-T${LINKER_SCRIPT}")
-add_link_options("-Wl,-Map=${PROJECT_NAME}.map")
-add_link_options("-Wl,--gc-sections") 
-#add_link_options("-Wl,-L/opt/st/stm32cubeide_1.0.2/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-arm-embedded.7-2018-q2-update.linux64_1.0.0.201904031358/tools/arm-none-eabi/lib")
-add_link_options("-Wl,--start-group") 
-add_link_options("-Wl,-lc")
-add_link_options("-Wl,-lm")
-add_link_options("-Wl,--end-group")
+set (CMAKE_EXE_LINKER_FLAGS "-T${LINKER_SCRIPT} -Wl,-Map=${PROJECT_NAME}.map -Wl,--gc-sections -Wl,--start-group -Wl,-lc -Wl,-lm -Wl,--end-group")
 
 add_executable(${PROJECT_NAME} ${LOCAL_SRCS} ${LOCAL_HDRS})
 
